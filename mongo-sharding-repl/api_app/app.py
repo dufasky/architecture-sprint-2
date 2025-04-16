@@ -87,23 +87,36 @@ async def root():
         collections[collection_name] = {
             "documents_count": await collection.count_documents({})
         }
-    try:
-        replica_status = await client.admin.command("replSetGetStatus")
-        replica_status = json.dumps(replica_status, indent=2, default=str)
-    except errors.OperationFailure:
-        replica_status = "No Replicas"
 
     topology_description = client.topology_description
     read_preference = client.client_options.read_preference
     topology_type = topology_description.topology_type_name
     replicaset_name = topology_description.replica_set_name
 
-    shards = None
+    # Get detailed shard distribution
+    shard_stats = None
     if topology_type == "Sharded":
-        shards_list = await client.admin.command("listShards")
-        shards = {}
-        for shard in shards_list.get("shards", {}):
-            shards[shard["_id"]] = shard["host"]
+        try:
+            # Get shard distribution stats
+            result = await client.admin.command("listShards")
+            shards = result.get("shards", [])
+            
+            # Get collection distribution
+            coll_stats = await db.command("collStats", "users")
+            
+            shard_stats = {
+                "total_docs": collections.get("users", {}).get("documents_count", 0),
+                "distribution": {}
+            }
+            
+            if "shards" in coll_stats:
+                for shard_name, stats in coll_stats["shards"].items():
+                    shard_stats["distribution"][shard_name] = {
+                        "docs": stats.get("count", 0),
+                        "size": stats.get("size", 0)
+                    }
+        except Exception as e:
+            shard_stats = {"error": str(e)}
 
     cache_enabled = False
     if REDIS_URL:
@@ -114,14 +127,10 @@ async def root():
         "mongo_replicaset_name": replicaset_name,
         "mongo_db": DATABASE_NAME,
         "read_preference": str(read_preference),
-        "mongo_nodes": client.nodes,
-        "mongo_primary_host": client.primary,
-        "mongo_secondary_hosts": client.secondaries,
-        "mongo_address": client.address,
-        "mongo_is_primary": client.is_primary,
+        "mongo_nodes": list(client.nodes),
         "mongo_is_mongos": client.is_mongos,
         "collections": collections,
-        "shards": shards,
+        "shard_distribution": shard_stats,
         "cache_enabled": cache_enabled,
         "status": "OK",
     }
