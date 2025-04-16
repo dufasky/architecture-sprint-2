@@ -1,0 +1,100 @@
+services:
+  # Config Servers
+  config1:
+    container_name: config1
+    image: mirror.gcr.io/mongo:latest
+    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all
+    volumes:
+      - config1_data:/data/configdb
+
+  config2:
+    container_name: config2
+    image: mirror.gcr.io/mongo:latest
+    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all
+    volumes:
+      - config2_data:/data/configdb
+
+  config3:
+    container_name: config3
+    image: mirror.gcr.io/mongo:latest
+    command: mongod --configsvr --replSet configReplSet --port 27019 --bind_ip_all
+    volumes:
+      - config3_data:/data/configdb
+
+  # Shard Servers
+  shard1:
+    container_name: shard1
+    image: mirror.gcr.io/mongo:latest
+    command: mongod --shardsvr --replSet shard1 --port 27018 --bind_ip_all
+    volumes:
+      - shard1_data:/data/db
+
+  shard2:
+    container_name: shard2
+    image: mirror.gcr.io/mongo:latest
+    command: mongod --shardsvr --replSet shard2 --port 27018 --bind_ip_all
+    volumes:
+      - shard2_data:/data/db
+
+  # Mongos Routers
+  mongos1:
+    container_name: mongos1
+    image: mirror.gcr.io/mongo:latest
+    command: mongos --configdb configReplSet/config1:27019,config2:27019,config3:27019 --bind_ip_all
+    ports:
+      - "28017:27017"
+    depends_on:
+      - config1
+      - config2
+      - config3
+      - shard1
+      - shard2
+
+  mongos2:
+    container_name: mongos2
+    image: mirror.gcr.io/mongo:latest
+    command: mongos --configdb configReplSet/config1:27019,config2:27019,config3:27019 --bind_ip_all
+    ports:
+      - "28018:27017"
+    depends_on:
+      - config1
+      - config2
+      - config3
+      - shard1
+      - shard2
+
+  mongos3:
+    container_name: mongos3
+    image: mirror.gcr.io/mongo:latest
+    command: mongos --configdb configReplSet/config1:27019,config2:27019,config3:27019 --bind_ip_all
+    ports:
+      - "28019:27017"
+    depends_on:
+      - config1
+      - config2
+      - config3
+      - shard1
+      - shard2
+
+  pymongo_api:
+    container_name: pymongo_api
+    build: 
+      context: api_app
+      dockerfile: Dockerfile
+    image: kazhem/pymongo_api:1.0.0
+    depends_on:
+      - mongos1
+      - mongos2
+      - mongos3
+    ports:
+      - 8080:8080
+    environment:
+      MONGODB_URL: "mongodb://mongos1,mongos2,mongos3"
+      MONGODB_DATABASE_NAME: "somedb"
+
+volumes:
+  config1_data:
+  config2_data:
+  config3_data:
+  shard1_data:
+  shard2_data:
